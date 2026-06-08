@@ -10,7 +10,7 @@ from PyQt6.QtGui import QFont, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QFrame,
-    QStatusBar, QMessageBox,
+    QStatusBar, QMessageBox, QFileDialog,
 )
 
 from ui.styles import COLORS, MAIN_STYLESHEET, AGENT_COLORS
@@ -63,13 +63,25 @@ class GraphRunnerThread(QThread):
             graph = build_graph()
             initial_state = get_initial_state(self._query)
 
-            final_state = None
-            for event in graph.stream(initial_state):
+            accumulated_state = dict(initial_state)
+            for event in graph.stream(initial_state, stream_mode="updates"):
                 node_name = list(event.keys())[0]
                 node_data = event[node_name]
 
                 if isinstance(node_data, dict):
-                    progress = node_data.get("progress", 0)
+                    # 累积 state
+                    for k, v in node_data.items():
+                        if k == "results" and isinstance(v, list):
+                            accumulated_state.setdefault("results", []).extend(v)
+                        elif k == "logs" and isinstance(v, list):
+                            accumulated_state.setdefault("logs", []).extend(v)
+                        elif k == "progress":
+                            old = accumulated_state.get("progress", 0)
+                            accumulated_state[k] = max(old, v)
+                        else:
+                            accumulated_state[k] = v
+
+                    progress = accumulated_state.get("progress", 0)
                     current = node_data.get("current_node", node_name)
                     self.node_started.emit(current)
                     self.progress_updated.emit(progress, f"{AGENT_NAMES.get(current, current)} 执行中")
@@ -82,12 +94,7 @@ class GraphRunnerThread(QThread):
                         summary = r.get("summary", "")[:100]
                     self.node_finished.emit(current, summary)
 
-                    final_state = node_data
-
-            if final_state and "final_report" in final_state:
-                self.completed.emit(final_state)
-            else:
-                self.completed.emit(final_state or {})
+            self.completed.emit(accumulated_state)
 
         except Exception as e:
             self.error_occurred.emit(str(e))
@@ -144,6 +151,12 @@ class MainWindow(QMainWindow):
         self._start_btn.setFont(QFont("PingFang SC", 13, QFont.Weight.Bold))
         self._start_btn.clicked.connect(self._start_research)
         input_layout.addWidget(self._start_btn)
+
+        self._export_btn = QPushButton("导出报告")
+        self._export_btn.setFont(QFont("PingFang SC", 13))
+        self._export_btn.setEnabled(False)
+        self._export_btn.clicked.connect(self._export_report)
+        input_layout.addWidget(self._export_btn)
         main_layout.addLayout(input_layout)
 
         # Main content: DAG (top) + agent panel (left) + result (right)
@@ -249,6 +262,7 @@ class MainWindow(QMainWindow):
     def _on_completed(self, state: dict):
         self._final_state = state
         self._start_btn.setEnabled(True)
+        self._export_btn.setEnabled(True)
 
         elapsed = time.time() - self._start_time
         self._statusbar.showMessage(f"调研完成 | 耗时 {elapsed:.1f}s")
@@ -279,3 +293,90 @@ class MainWindow(QMainWindow):
             logs = self._agent_logs.get("manager", [])
         dialog = AgentLogDialog(agent_name, logs, self)
         dialog.exec()
+
+    def _export_report(self):
+        if not self._final_state:
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出报告", "chain_intel_report.html",
+            "HTML文件 (*.html);;Markdown文件 (*.md)"
+        )
+        if not path:
+            return
+
+        state = self._final_state
+        if path.endswith(".md"):
+            content = self._build_markdown_report(state)
+        else:
+            content = self._build_html_report(state)
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        self._statusbar.showMessage(f"报告已导出: {path}")
+
+    def _build_markdown_report(self, state: dict) -> str:
+        lines = []
+        lines.append(f"# 投资调研报告\n")
+        lines.append(f"**研究问题**: {state.get('user_query', '')}\n")
+        lines.append(f"---\n")
+
+        if state.get("mece_framework"):
+            lines.append(f"## MECE 分析框架\n")
+            lines.append(state["mece_framework"])
+            lines.append("\n")
+
+        if state.get("final_report"):
+            lines.append(f"## 详细报告\n")
+            lines.append(state["final_report"])
+            lines.append("\n")
+
+        if state.get("recommendations"):
+            lines.append(f"## 个股推荐\n")
+            lines.append("| 代码 | 名称 | 评级 | 当前价 | 目标价 | 理由 |")
+            lines.append("|------|------|------|--------|--------|------|")
+            for rec in state["recommendations"]:
+                target = f"{rec.get('target_price_low', '?')}-{rec.get('target_price_high', '?')}"
+                lines.append(f"| {rec.get('code','')} | {rec.get('name','')} | {rec.get('rating','')} | {rec.get('current_price','')} | {target} | {rec.get('rationale','')} |")
+            lines.append("\n")
+
+        if state.get("debate_records"):
+            lines.append(f"## 辩论记录\n")
+            for d in state["debate_records"]:
+                lines.append(f"### {d.get('topic', '')}")
+                lines.append(f"**正方**: {'; '.join(d.get('pro_arguments', []))}")
+                lines.append(f"**反方**: {'; '.join(d.get('con_arguments', []))}")
+                lines.append(f"**结论**: {d.get('conclusion', '')}")
+                lines.append(f"**置信度**: {d.get('confidence', 0)}\n")
+
+        if state.get("results"):
+            lines.append(f"## 各专员研究详情\n")
+            for r in state["results"]:
+                lines.append(f"### {r.get('agent', '')}")
+                lines.append(r.get("details", r.get("summary", "")))
+                lines.append("\n")
+
+        return "\n".join(lines)
+
+    def _build_html_report(self, state: dict) -> str:
+        md = self._build_markdown_report(state)
+        # 简单转 HTML
+        body = md.replace("\n", "<br>\n")
+        return f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>chain_intel 投资调研报告</title>
+<style>
+body {{ font-family: 'PingFang SC', sans-serif; max-width: 900px; margin: 40px auto;
+       padding: 20px; line-height: 1.8; color: #333; }}
+h1 {{ color: #7c8aff; border-bottom: 2px solid #7c8aff; padding-bottom: 8px; }}
+h2 {{ color: #4a4a6a; margin-top: 30px; }}
+h3 {{ color: #666; }}
+table {{ border-collapse: collapse; width: 100%; margin: 12px 0; }}
+th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+th {{ background: #f5f5ff; }}
+strong {{ color: #4a4a6a; }}
+</style>
+</head><body>
+{body}
+</body></html>"""

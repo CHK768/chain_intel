@@ -1,20 +1,11 @@
 """
-Tavily 搜索工具封装
+DuckDuckGo 搜索工具封装
 """
 from __future__ import annotations
 
-import os
-
-from tavily import TavilyClient
+from duckduckgo_search import DDGS
 
 from config import DDG_MAX_RESULTS as MAX_RESULTS
-
-
-def _get_client() -> TavilyClient:
-    key = os.environ.get("TAVILY_API_KEY", "")
-    if not key:
-        raise RuntimeError("TAVILY_API_KEY not configured")
-    return TavilyClient(api_key=key)
 
 
 def ddg_search(
@@ -22,23 +13,18 @@ def ddg_search(
     max_results: int = MAX_RESULTS,
 ) -> list[dict]:
     """
-    Tavily 搜索，返回结构化结果列表。
+    DuckDuckGo 搜索，返回结构化结果列表。
     每条结果包含: title, url, content
     """
-    client = _get_client()
     results = []
     try:
-        response = client.search(
-            query=query,
-            max_results=max_results,
-            search_depth="advanced",
-        )
-        for item in response.get("results", []):
-            results.append({
-                "title": item.get("title", ""),
-                "url": item.get("url", ""),
-                "content": item.get("content", ""),
-            })
+        with DDGS() as ddgs:
+            for item in ddgs.text(query, max_results=max_results):
+                results.append({
+                    "title": item.get("title", ""),
+                    "url": item.get("href", ""),
+                    "content": item.get("body", ""),
+                })
     except Exception:
         pass
     return results

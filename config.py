@@ -1,13 +1,15 @@
 import os
 from pathlib import Path
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "")
+
+DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic"
 
 DB_PATH = Path.home() / ".limit_ladder_ths.db"
 
-MODEL_PRIMARY = "shannon-venti-4-8"
-MODEL_FAST = "shannon-grande-4-6"
+MODEL_PRIMARY = "deepseek-v4-pro"
+MODEL_FAST = "deepseek-v4-flash"
 
 AGENT_MODEL = MODEL_PRIMARY
 MAX_TOKENS_MANAGER = 4096

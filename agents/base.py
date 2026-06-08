@@ -10,7 +10,7 @@ from typing import Any
 
 from anthropic import Anthropic
 
-from config import ANTHROPIC_API_KEY, AGENT_MODEL, MAX_TOKENS_AGENT
+from config import DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, AGENT_MODEL, MAX_TOKENS_AGENT
 
 
 class BaseAgent(ABC):
@@ -19,7 +19,7 @@ class BaseAgent(ABC):
     system_prompt: str = ""
 
     def __init__(self):
-        self.client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        self.client = Anthropic(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
         self.model = AGENT_MODEL
         self.max_tokens = MAX_TOKENS_AGENT
 

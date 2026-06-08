@@ -1,9 +1,9 @@
 """
-DuckDuckGo 搜索工具封装
+DDGS 搜索工具封装 — 使用 ddgs 包（多后端自动切换）
 """
 from __future__ import annotations
 
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 from config import DDG_MAX_RESULTS as MAX_RESULTS
 
@@ -13,18 +13,18 @@ def ddg_search(
     max_results: int = MAX_RESULTS,
 ) -> list[dict]:
     """
-    DuckDuckGo 搜索，返回结构化结果列表。
+    互联网搜索，自动切换后端（Bing/Google/DuckDuckGo HTML）。
     每条结果包含: title, url, content
     """
     results = []
     try:
         with DDGS() as ddgs:
             for item in ddgs.text(query, max_results=max_results):
-                results.append({
-                    "title": item.get("title", ""),
-                    "url": item.get("href", ""),
-                    "content": item.get("body", ""),
-                })
+                title = item.get("title", "")
+                url = item.get("href", "") or item.get("url", "")
+                body = item.get("body", "") or item.get("content", "")
+                if title:
+                    results.append({"title": title, "url": url, "content": body})
     except Exception:
         pass
     return results
